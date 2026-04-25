@@ -245,8 +245,10 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 			"-pix_fmt", "yuv420p",
 			"-an", "-y", segPath,
 		)
+		var photoStderr strings.Builder
+		cmd.Stderr = &photoStderr
 		if err := cmd.Run(); err != nil {
-			slog.Error("ffmpeg_photo_segment", "file", photo, "error", err)
+			slog.Error("ffmpeg_photo_segment", "file", photo, "error", err, "stderr", photoStderr.String())
 			continue
 		}
 		segmentPaths = append(segmentPaths, segPath)
@@ -265,8 +267,10 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 			"-pix_fmt", "yuv420p",
 			"-an", "-y", segPath,
 		)
+		var videoStderr strings.Builder
+		cmd.Stderr = &videoStderr
 		if err := cmd.Run(); err != nil {
-			slog.Error("ffmpeg_video_segment", "file", video, "error", err)
+			slog.Error("ffmpeg_video_segment", "file", video, "error", err, "stderr", videoStderr.String())
 			continue
 		}
 		segmentPaths = append(segmentPaths, segPath)
@@ -277,11 +281,12 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 		return fmt.Errorf("no segments created")
 	}
 
-	// Create concat list file
+	// Create concat list file (use absolute paths)
 	concatList := filepath.Join(segmentDir, "concat.txt")
 	var listContent strings.Builder
 	for _, seg := range segmentPaths {
-		listContent.WriteString(fmt.Sprintf("file '%s'\n", seg))
+		absSeg, _ := filepath.Abs(seg)
+		listContent.WriteString(fmt.Sprintf("file '%s'\n", absSeg))
 	}
 	if err := os.WriteFile(concatList, []byte(listContent.String()), 0644); err != nil {
 		return fmt.Errorf("write concat list: %w", err)
@@ -298,7 +303,10 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 		"-pix_fmt", "yuv420p",
 		"-an", "-y", concatVideo,
 	)
+	var concatStderr strings.Builder
+	cmd.Stderr = &concatStderr
 	if err := cmd.Run(); err != nil {
+		slog.Error("ffmpeg_concat_stderr", "stderr", concatStderr.String())
 		return fmt.Errorf("ffmpeg concat: %w", err)
 	}
 
