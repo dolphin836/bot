@@ -2,6 +2,7 @@ package vlog
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"os"
@@ -43,6 +44,12 @@ type DailyContent struct {
 	Messages []memory.Message
 	Photos   []string
 	Videos   []string
+}
+
+type mediaCaption struct {
+	Path    string
+	Type    string // "photo" or "video"
+	Caption string
 }
 
 func (g *Generator) CollectDaily(date string) (*DailyContent, error) {
@@ -90,37 +97,21 @@ func (dc *DailyContent) HasEnoughContent(minItems int) bool {
 
 func (g *Generator) Generate(ctx context.Context, content *DailyContent) (string, error) {
 	slog.Info("vlog_generate_start", "date", content.Date,
-		"photos", len(content.Photos), "videos", len(content.Videos), "messages", len(content.Messages))
+		"photos", len(content.Photos), "videos", len(content.Videos))
 
-	// Step 1: Generate narration script
-	script, err := g.generateScript(ctx, content)
-	if err != nil {
-		return "", fmt.Errorf("generate script: %w", err)
-	}
-	slog.Info("vlog_script_generated", "length", len(script))
-
-	// Step 2: Generate narration audio
 	dayDir := filepath.Join(g.cfg.MediaDir, content.Date)
 	os.MkdirAll(dayDir, 0755)
 
-	narrationPath := filepath.Join(dayDir, "narration.mp3")
-	audioData, err := g.cfg.TTSSvc.Synthesize(ctx, script)
+	// Step 1: Generate captions for each media
+	captions, err := g.generateCaptions(ctx, content)
 	if err != nil {
-		return "", fmt.Errorf("tts synthesize: %w", err)
+		return "", fmt.Errorf("generate captions: %w", err)
 	}
-	if err := os.WriteFile(narrationPath, audioData, 0644); err != nil {
-		return "", fmt.Errorf("write narration: %w", err)
-	}
+	slog.Info("vlog_captions_generated", "count", len(captions))
 
-	// Get narration duration to calculate per-segment timing
-	narrationDur, err := getAudioDuration(narrationPath)
-	if err != nil {
-		narrationDur = 30.0 // fallback
-	}
-
-	// Step 3: Compose video
+	// Step 2: Compose video segments with subtitles
 	outputPath := filepath.Join(dayDir, "vlog.mp4")
-	if err := g.compose(ctx, content, narrationPath, narrationDur, outputPath); err != nil {
+	if err := g.compose(ctx, captions, outputPath); err != nil {
 		return "", fmt.Errorf("compose video: %w", err)
 	}
 
@@ -128,42 +119,51 @@ func (g *Generator) Generate(ctx context.Context, content *DailyContent) (string
 	return outputPath, nil
 }
 
-func (g *Generator) generateScript(ctx context.Context, content *DailyContent) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("今天是%s，以下是今天的内容：\n\n", content.Date))
+func (g *Generator) generateCaptions(ctx context.Context, content *DailyContent) ([]mediaCaption, error) {
+	var result []mediaCaption
 
-	if len(content.Messages) > 0 {
-		sb.WriteString("## 今天的对话\n")
-		for _, msg := range content.Messages {
-			if msg.Role == "user" {
-				sb.WriteString(fmt.Sprintf("他说: %s\n", msg.Content))
-			}
+	// Caption each photo
+	for _, photo := range content.Photos {
+		caption, err := g.captionImage(ctx, photo)
+		if err != nil {
+			slog.Error("caption_photo", "file", photo, "error", err)
+			caption = "记录生活的一刻"
 		}
-		sb.WriteString("\n")
+		result = append(result, mediaCaption{Path: photo, Type: "photo", Caption: caption})
 	}
 
-	sb.WriteString(fmt.Sprintf("今天收到了 %d 张照片和 %d 个视频。\n", len(content.Photos), len(content.Videos)))
+	// Caption each video (from thumbnail)
+	for _, video := range content.Videos {
+		caption, err := g.captionVideo(ctx, video)
+		if err != nil {
+			slog.Error("caption_video", "file", video, "error", err)
+			caption = "一段小视频"
+		}
+		result = append(result, mediaCaption{Path: video, Type: "video", Caption: caption})
+	}
 
-	persona := g.cfg.Persona
-	if persona == "" {
-		persona = "你是一个温柔的女生"
+	return result, nil
+}
+
+func (g *Generator) captionImage(ctx context.Context, photoPath string) (string, error) {
+	imgData, mediaType, err := readImageAsBase64(photoPath)
+	if err != nil {
+		return "", err
 	}
 
 	msg, err := g.client.Messages.New(ctx, anthropic.MessageNewParams{
 		Model:    anthropic.Model(g.cfg.Model),
-		MaxTokens: 500,
+		MaxTokens: 80,
 		System: []anthropic.TextBlockParam{
-			{Text: persona + "\n\n" +
-				"现在你要为今天写一段 vlog 旁白。要求：\n" +
-				"- 用第一人称，就像在录 vlog 对着镜头说话\n" +
-				"- 温暖、自然、有感情，像在和最好的朋友分享日常\n" +
-				"- 根据聊天内容提到今天发生的事情和心情\n" +
-				"- 长度控制在 150-250 字（约 30-60 秒朗读时长）\n" +
-				"- 不要加标题、emoji 或格式符号\n" +
-				"- 开头自然引入，结尾温暖收束"},
+			{Text: "为这张照片写一句简短的字幕，用中文，第三人称口吻。" +
+				"简洁描述画面内容，或发表一点温暖的感想。" +
+				"只输出一句话，不超过 20 个字，不加标点以外的符号。"},
 		},
 		Messages: []anthropic.MessageParam{
-			anthropic.NewUserMessage(anthropic.NewTextBlock(sb.String())),
+			anthropic.NewUserMessage(
+				anthropic.NewImageBlockBase64(mediaType, imgData),
+				anthropic.NewTextBlock("写字幕"),
+			),
 		},
 	})
 	if err != nil {
@@ -178,110 +178,57 @@ func (g *Generator) generateScript(ctx context.Context, content *DailyContent) (
 	return "", fmt.Errorf("no text in response")
 }
 
-func getAudioDuration(path string) (float64, error) {
-	cmd := exec.Command("ffprobe",
-		"-v", "quiet",
-		"-show_entries", "format=duration",
-		"-of", "default=noprint_wrappers=1:nokey=1",
-		path,
+func (g *Generator) captionVideo(ctx context.Context, videoPath string) (string, error) {
+	tmpThumb := filepath.Join(os.TempDir(), fmt.Sprintf("vlog_thumb_%d.jpg", time.Now().UnixNano()))
+	defer os.Remove(tmpThumb)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", videoPath, "-ss", "00:00:01", "-vframes", "1", "-y", tmpThumb,
 	)
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, err
+	if err := cmd.Run(); err != nil {
+		return "一段小视频", nil
 	}
-	var dur float64
-	fmt.Sscanf(strings.TrimSpace(string(out)), "%f", &dur)
-	return dur, nil
+
+	return g.captionImage(ctx, tmpThumb)
 }
 
-func (g *Generator) compose(ctx context.Context, content *DailyContent, narrationPath string, narrationDur float64, outputPath string) error {
-	totalMedia := len(content.Photos) + len(content.Videos)
-	if totalMedia == 0 {
+func (g *Generator) compose(ctx context.Context, captions []mediaCaption, outputPath string) error {
+	if len(captions) == 0 {
 		return fmt.Errorf("no media to compose")
 	}
 
-	// Calculate per-segment duration based on narration length
-	// Photos get equal share, videos use their own length (capped)
-	maxVideoDur := 8.0
-	photoDur := narrationDur / float64(totalMedia)
-	if photoDur < 3.0 {
-		photoDur = 3.0
-	}
-	if photoDur > 8.0 {
-		photoDur = 8.0
-	}
-
-	// Strategy: create individual segment clips, then concat with crossfade
 	segmentDir := filepath.Join(filepath.Dir(outputPath), "segments")
 	os.MkdirAll(segmentDir, 0755)
 	defer os.RemoveAll(segmentDir)
 
+	// Each segment: 4-6 seconds
+	photoDur := 5.0
+	videoDur := 8.0
+
 	var segmentPaths []string
-	segIdx := 0
 
-	// Process photos — Ken Burns with slow zoom + pan
-	for _, photo := range content.Photos {
-		segPath := filepath.Join(segmentDir, fmt.Sprintf("seg_%03d.mp4", segIdx))
+	for i, mc := range captions {
+		segPath := filepath.Join(segmentDir, fmt.Sprintf("seg_%03d.mp4", i))
+		var err error
 
-		// Alternate between zoom-in and zoom-out for variety
-		var zoompan string
-		switch segIdx % 3 {
-		case 0: // Slow zoom in
-			zoompan = fmt.Sprintf("zoompan=z='min(zoom+0.0008,1.3)':d=%d:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
-				int(photoDur*30))
-		case 1: // Pan left to right
-			zoompan = fmt.Sprintf("zoompan=z='1.15':d=%d:x='if(eq(on,1),0,x+2)':y='ih/4':s=1080x1920:fps=30",
-				int(photoDur*30))
-		case 2: // Slow zoom out
-			zoompan = fmt.Sprintf("zoompan=z='if(eq(on,1),1.3,max(zoom-0.0008,1.0))':d=%d:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30",
-				int(photoDur*30))
+		if mc.Type == "photo" {
+			err = g.composePhotoSegment(ctx, mc, segPath, photoDur, i)
+		} else {
+			err = g.composeVideoSegment(ctx, mc, segPath, videoDur)
 		}
 
-		cmd := exec.CommandContext(ctx, "ffmpeg",
-			"-loop", "1", "-i", photo,
-			"-vf", fmt.Sprintf("scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,%s", zoompan),
-			"-t", fmt.Sprintf("%.1f", photoDur),
-			"-c:v", "libx264", "-preset", "fast", "-crf", "20",
-			"-pix_fmt", "yuv420p",
-			"-an", "-y", segPath,
-		)
-		var photoStderr strings.Builder
-		cmd.Stderr = &photoStderr
-		if err := cmd.Run(); err != nil {
-			slog.Error("ffmpeg_photo_segment", "file", photo, "error", err, "stderr", photoStderr.String())
+		if err != nil {
+			slog.Error("compose_segment", "file", mc.Path, "error", err)
 			continue
 		}
 		segmentPaths = append(segmentPaths, segPath)
-		segIdx++
-	}
-
-	// Process videos — trim, scale to match
-	for _, video := range content.Videos {
-		segPath := filepath.Join(segmentDir, fmt.Sprintf("seg_%03d.mp4", segIdx))
-
-		cmd := exec.CommandContext(ctx, "ffmpeg",
-			"-i", video,
-			"-t", fmt.Sprintf("%.1f", maxVideoDur),
-			"-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black",
-			"-c:v", "libx264", "-preset", "fast", "-crf", "20",
-			"-pix_fmt", "yuv420p",
-			"-an", "-y", segPath,
-		)
-		var videoStderr strings.Builder
-		cmd.Stderr = &videoStderr
-		if err := cmd.Run(); err != nil {
-			slog.Error("ffmpeg_video_segment", "file", video, "error", err, "stderr", videoStderr.String())
-			continue
-		}
-		segmentPaths = append(segmentPaths, segPath)
-		segIdx++
 	}
 
 	if len(segmentPaths) == 0 {
 		return fmt.Errorf("no segments created")
 	}
 
-	// Create concat list file (use absolute paths)
+	// Concat all segments
 	concatList := filepath.Join(segmentDir, "concat.txt")
 	var listContent strings.Builder
 	for _, seg := range segmentPaths {
@@ -292,25 +239,20 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 		return fmt.Errorf("write concat list: %w", err)
 	}
 
-	// Concat segments with crossfade would be complex, use simple concat for reliability
-	// Then mix narration + BGM
-
 	concatVideo := filepath.Join(segmentDir, "concat.mp4")
 	cmd := exec.CommandContext(ctx, "ffmpeg",
-		"-f", "concat", "-safe", "0",
-		"-i", concatList,
+		"-f", "concat", "-safe", "0", "-i", concatList,
 		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
-		"-pix_fmt", "yuv420p",
-		"-an", "-y", concatVideo,
+		"-pix_fmt", "yuv420p", "-an", "-y", concatVideo,
 	)
-	var concatStderr strings.Builder
-	cmd.Stderr = &concatStderr
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		slog.Error("ffmpeg_concat_stderr", "stderr", concatStderr.String())
+		slog.Error("ffmpeg_concat", "stderr", stderr.String())
 		return fmt.Errorf("ffmpeg concat: %w", err)
 	}
 
-	// Final mix: video + narration + BGM
+	// Add BGM
 	hasBGM := false
 	if g.cfg.BGMPath != "" {
 		if info, err := os.Stat(g.cfg.BGMPath); err == nil && info.Size() > 1000 {
@@ -321,31 +263,151 @@ func (g *Generator) compose(ctx context.Context, content *DailyContent, narratio
 	if hasBGM {
 		cmd = exec.CommandContext(ctx, "ffmpeg",
 			"-i", concatVideo,
-			"-i", narrationPath,
 			"-i", g.cfg.BGMPath,
 			"-filter_complex",
-			"[1:a]aformat=sample_rates=44100:channel_layouts=stereo,adelay=500|500[narr];"+
-				"[2:a]aloop=-1:size=2e9,aformat=sample_rates=44100:channel_layouts=stereo,volume=0.12[bgm];"+
-				"[narr][bgm]amix=inputs=2:duration=first:dropout_transition=3[aout]",
-			"-map", "0:v", "-map", "[aout]",
+			"[1:a]aloop=-1:size=2e9,aformat=sample_rates=44100:channel_layouts=stereo,volume=0.6[bgm]",
+			"-map", "0:v", "-map", "[bgm]",
 			"-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
 			"-shortest",
 			"-y", outputPath,
 		)
+		var mixStderr strings.Builder
+		cmd.Stderr = &mixStderr
+		if err := cmd.Run(); err != nil {
+			slog.Error("ffmpeg_bgm_mix", "stderr", mixStderr.String())
+			return fmt.Errorf("ffmpeg bgm mix: %w", err)
+		}
 	} else {
+		// No BGM, just copy
 		cmd = exec.CommandContext(ctx, "ffmpeg",
 			"-i", concatVideo,
-			"-i", narrationPath,
-			"-map", "0:v", "-map", "1:a",
-			"-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
-			"-shortest",
-			"-y", outputPath,
+			"-c:v", "copy", "-an", "-y", outputPath,
 		)
-	}
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("ffmpeg final mix: %w", err)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("ffmpeg copy: %w", err)
+		}
 	}
 
 	return nil
+}
+
+func (g *Generator) composePhotoSegment(ctx context.Context, mc mediaCaption, segPath string, dur float64, idx int) error {
+	// Ken Burns effects alternate
+	var zoompan string
+	frames := int(dur * 30)
+	switch idx % 3 {
+	case 0:
+		zoompan = fmt.Sprintf("zoompan=z='min(zoom+0.0008,1.3)':d=%d:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30", frames)
+	case 1:
+		zoompan = fmt.Sprintf("zoompan=z='1.15':d=%d:x='if(eq(on,1),0,x+2)':y='ih/4':s=1080x1920:fps=30", frames)
+	case 2:
+		zoompan = fmt.Sprintf("zoompan=z='if(eq(on,1),1.3,max(zoom-0.0008,1.0))':d=%d:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920:fps=30", frames)
+	}
+
+	// Escape subtitle text for FFmpeg drawtext
+	safeCaption := escapeFFmpegText(mc.Caption)
+
+	vf := fmt.Sprintf(
+		"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,%s,"+
+			"drawtext=text='%s':fontsize=36:fontcolor=white:borderw=2:bordercolor=black:"+
+			"x=(w-text_w)/2:y=h-120:enable='between(t,0.5,%.1f)'",
+		zoompan, safeCaption, dur-0.5,
+	)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-loop", "1", "-i", mc.Path,
+		"-vf", vf,
+		"-t", fmt.Sprintf("%.1f", dur),
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p", "-an", "-y", segPath,
+	)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		slog.Error("ffmpeg_photo_seg", "stderr", stderr.String())
+		return fmt.Errorf("photo segment: %w", err)
+	}
+	return nil
+}
+
+func (g *Generator) composeVideoSegment(ctx context.Context, mc mediaCaption, segPath string, maxDur float64) error {
+	safeCaption := escapeFFmpegText(mc.Caption)
+
+	vf := fmt.Sprintf(
+		"scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"+
+			"drawtext=text='%s':fontsize=36:fontcolor=white:borderw=2:bordercolor=black:"+
+			"x=(w-text_w)/2:y=h-120:enable='between(t,0.5,%.1f)'",
+		safeCaption, maxDur-0.5,
+	)
+
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-i", mc.Path,
+		"-t", fmt.Sprintf("%.1f", maxDur),
+		"-vf", vf,
+		"-c:v", "libx264", "-preset", "fast", "-crf", "20",
+		"-pix_fmt", "yuv420p", "-an", "-y", segPath,
+	)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		slog.Error("ffmpeg_video_seg", "stderr", stderr.String())
+		return fmt.Errorf("video segment: %w", err)
+	}
+	return nil
+}
+
+func escapeFFmpegText(text string) string {
+	// FFmpeg drawtext special chars
+	r := strings.NewReplacer(
+		`\`, `\\\\`,
+		`'`, `'\\''`,
+		`:`, `\\:`,
+		`%`, `%%`,
+	)
+	return r.Replace(text)
+}
+
+func readImageAsBase64(filePath string) (string, string, error) {
+	ext := strings.ToLower(filepath.Ext(filePath))
+
+	if ext == ".heic" {
+		return convertHEICToJPEGBase64(filePath)
+	}
+
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", "", err
+	}
+
+	mediaType := "image/jpeg"
+	switch ext {
+	case ".png":
+		mediaType = "image/png"
+	case ".gif":
+		mediaType = "image/gif"
+	case ".webp":
+		mediaType = "image/webp"
+	}
+
+	return base64.StdEncoding.EncodeToString(data), mediaType, nil
+}
+
+func convertHEICToJPEGBase64(filePath string) (string, string, error) {
+	tmpFile := filepath.Join(os.TempDir(), "bot_heic_"+filepath.Base(filePath)+".jpg")
+	defer os.Remove(tmpFile)
+
+	cmd := exec.Command("sips", "-s", "format", "jpeg", filePath, "--out", tmpFile)
+	if err := cmd.Run(); err != nil {
+		cmd = exec.Command("ffmpeg", "-i", filePath, "-y", tmpFile)
+		if err := cmd.Run(); err != nil {
+			return "", "", fmt.Errorf("convert HEIC: %w", err)
+		}
+	}
+
+	data, err := os.ReadFile(tmpFile)
+	if err != nil {
+		return "", "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(data), "image/jpeg", nil
 }
