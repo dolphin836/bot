@@ -27,6 +27,8 @@ func (h *Handler) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Mes
 			keyword = strings.Join(parts[1:], " ")
 		}
 		h.cmdForget(ctx, b, msg, keyword)
+	case "/voice":
+		h.cmdVoice(ctx, b, msg)
 	case "/scan":
 		h.cmdScan(ctx, b, msg)
 	default:
@@ -39,6 +41,7 @@ func (h *Handler) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Mes
 
 func (h *Handler) cmdHelp(ctx context.Context, b *bot.Bot, msg *models.Message) {
 	text := `/help — Show this message
+/voice — Toggle voice reply mode
 /clear — Clear all memory and start fresh
 /facts — Show stored long-term facts
 /forget <keyword> — Delete facts matching keyword
@@ -117,6 +120,18 @@ func (h *Handler) cmdForget(ctx context.Context, b *bot.Bot, msg *models.Message
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: msg.Chat.ID,
 		Text:   fmt.Sprintf("Forgot facts matching %q.", keyword),
+	})
+}
+
+func (h *Handler) cmdVoice(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	h.voiceMode = !h.voiceMode
+	status := "关闭"
+	if h.voiceMode {
+		status = "开启"
+	}
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   fmt.Sprintf("语音模式已%s", status),
 	})
 }
 

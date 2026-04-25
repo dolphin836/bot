@@ -20,11 +20,12 @@ import (
 )
 
 type Handler struct {
-	ownerID int64
-	chatSvc *chat.Service
-	ttsSvc  *tts.Service
-	scanner *photos.Scanner
-	mu      sync.Mutex
+	ownerID   int64
+	chatSvc   *chat.Service
+	ttsSvc    *tts.Service
+	scanner   *photos.Scanner
+	voiceMode bool
+	mu        sync.Mutex
 }
 
 func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service, scanner *photos.Scanner) *Handler {
@@ -52,7 +53,7 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 
 	if msg.Text != "" {
-		h.handleText(ctx, b, msg, false)
+		h.handleText(ctx, b, msg, h.voiceMode)
 		return
 	}
 
