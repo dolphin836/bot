@@ -3,6 +3,7 @@ package vlog
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"time"
@@ -46,17 +47,18 @@ func (s *Scheduler) Start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-time.After(waitDuration):
-			s.run(ctx)
+			s.run(ctx, false)
 		}
 	}
 }
 
-// RunNow triggers vlog generation for today immediately.
+// RunNow triggers vlog generation for today immediately (manual trigger).
 func (s *Scheduler) RunNow(ctx context.Context) {
-	s.run(ctx)
+	s.run(ctx, true)
 }
 
-func (s *Scheduler) run(ctx context.Context) {
+func (s *Scheduler) run(ctx context.Context, notify ...bool) {
+	shouldNotify := len(notify) > 0 && notify[0]
 	date := time.Now().Format("2006-01-02")
 	slog.Info("vlog_daily_check", "date", date)
 
@@ -69,6 +71,12 @@ func (s *Scheduler) run(ctx context.Context) {
 	if !content.HasEnoughContent(s.minItems) {
 		slog.Info("vlog_skip", "date", date, "reason", "not enough content",
 			"photos", len(content.Photos), "videos", len(content.Videos))
+		if shouldNotify {
+			s.bot.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: s.ownerID,
+				Text:   fmt.Sprintf("今天的素材还不够哦~ 目前有 %d 张照片和 %d 个视频，至少需要 %d 个才能生成 vlog", len(content.Photos), len(content.Videos), s.minItems),
+			})
+		}
 		return
 	}
 

@@ -135,6 +135,11 @@ func (h *Handler) cmdVlog(ctx context.Context, b *bot.Bot, msg *models.Message) 
 		return
 	}
 
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   "让我看看今天都有些什么...",
+	})
+
 	go h.vlogScheduler.RunNow(ctx)
 }
 
