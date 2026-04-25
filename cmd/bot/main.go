@@ -14,6 +14,7 @@ import (
 	"github.com/dolphin836/bot/internal/photos"
 	"github.com/dolphin836/bot/internal/tools"
 	"github.com/dolphin836/bot/internal/tts"
+	"github.com/dolphin836/bot/internal/vlog"
 	tgbot "github.com/go-telegram/bot"
 )
 
@@ -75,8 +76,24 @@ func main() {
 		scanner = photos.NewScanner(store, cfg.Anthropic.APIKey, cfg.Anthropic.Model, cfg.Photos.Dir)
 	}
 
+	var vlogGen *vlog.Generator
+	if cfg.Vlog.Enabled && cfg.Vlog.MediaDir != "" {
+		vlogGen = vlog.NewGenerator(vlog.Config{
+			MediaDir: cfg.Vlog.MediaDir,
+			BGMPath:  cfg.Vlog.BGMPath,
+			APIKey:   cfg.Anthropic.APIKey,
+			Model:    cfg.Anthropic.Model,
+			Persona:  cfg.Anthropic.Persona,
+			TTSSvc:   ttsSvc,
+			Store:    store,
+		})
+	}
+
 	chatSvc := chat.NewService(memMgr, llmClient)
-	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc, ttsSvc, scanner)
+
+	// Handler and vlog scheduler need the bot instance, so create handler first
+	// then set up scheduler after bot is created
+	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc, ttsSvc, scanner, cfg.Vlog.MediaDir, nil)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -85,6 +102,13 @@ func main() {
 	if err != nil {
 		slog.Error("init_bot", "error", err)
 		os.Exit(1)
+	}
+
+	// Set up vlog scheduler after bot is created
+	if vlogGen != nil {
+		vlogSched := vlog.NewScheduler(vlogGen, b, cfg.Telegram.OwnerID, cfg.Vlog.ScheduleHour, cfg.Vlog.MinItems)
+		handler.SetVlogScheduler(vlogSched)
+		go vlogSched.Start(ctx)
 	}
 
 	slog.Info("bot_started", "owner_id", cfg.Telegram.OwnerID)

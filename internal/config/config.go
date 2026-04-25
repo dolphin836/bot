@@ -17,6 +17,15 @@ type Config struct {
 	Weather   WeatherConfig   `mapstructure:"weather"`
 	TTS       TTSConfig       `mapstructure:"tts"`
 	Photos    PhotosConfig    `mapstructure:"photos"`
+	Vlog      VlogConfig      `mapstructure:"vlog"`
+}
+
+type VlogConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	ScheduleHour int    `mapstructure:"schedule_hour"`
+	MediaDir     string `mapstructure:"media_dir"`
+	BGMPath      string `mapstructure:"bgm_path"`
+	MinItems     int    `mapstructure:"min_items"`
 }
 
 type PhotosConfig struct {

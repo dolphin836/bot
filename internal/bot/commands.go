@@ -29,6 +29,8 @@ func (h *Handler) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Mes
 		h.cmdForget(ctx, b, msg, keyword)
 	case "/voice":
 		h.cmdVoice(ctx, b, msg)
+	case "/vlog":
+		h.cmdVlog(ctx, b, msg)
 	case "/scan":
 		h.cmdScan(ctx, b, msg)
 	default:
@@ -45,6 +47,7 @@ func (h *Handler) cmdHelp(ctx context.Context, b *bot.Bot, msg *models.Message) 
 /clear — Clear all memory and start fresh
 /facts — Show stored long-term facts
 /forget <keyword> — Delete facts matching keyword
+/vlog — Generate today's vlog now
 /scan — Scan and index local photo album`
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
@@ -121,6 +124,18 @@ func (h *Handler) cmdForget(ctx context.Context, b *bot.Bot, msg *models.Message
 		ChatID: msg.Chat.ID,
 		Text:   fmt.Sprintf("Forgot facts matching %q.", keyword),
 	})
+}
+
+func (h *Handler) cmdVlog(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	if h.vlogScheduler == nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "Vlog 功能未配置。",
+		})
+		return
+	}
+
+	go h.vlogScheduler.RunNow(ctx)
 }
 
 func (h *Handler) cmdVoice(ctx context.Context, b *bot.Bot, msg *models.Message) {

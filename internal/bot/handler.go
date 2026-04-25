@@ -15,6 +15,7 @@ import (
 	"github.com/dolphin836/bot/internal/chat"
 	"github.com/dolphin836/bot/internal/photos"
 	"github.com/dolphin836/bot/internal/tts"
+	"github.com/dolphin836/bot/internal/vlog"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -24,17 +25,25 @@ type Handler struct {
 	chatSvc   *chat.Service
 	ttsSvc    *tts.Service
 	scanner   *photos.Scanner
-	voiceMode bool
+	mediaDir      string
+	vlogScheduler *vlog.Scheduler
+	voiceMode     bool
 	mu        sync.Mutex
 }
 
-func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service, scanner *photos.Scanner) *Handler {
+func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service, scanner *photos.Scanner, mediaDir string, vlogScheduler *vlog.Scheduler) *Handler {
 	return &Handler{
-		ownerID: ownerID,
-		chatSvc: chatSvc,
-		ttsSvc:  ttsSvc,
-		scanner: scanner,
+		ownerID:       ownerID,
+		chatSvc:       chatSvc,
+		ttsSvc:        ttsSvc,
+		scanner:       scanner,
+		mediaDir:      mediaDir,
+		vlogScheduler: vlogScheduler,
 	}
+}
+
+func (h *Handler) SetVlogScheduler(s *vlog.Scheduler) {
+	h.vlogScheduler = s
 }
 
 func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update) {
@@ -66,6 +75,44 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 		h.handlePhoto(ctx, b, msg)
 		return
 	}
+
+	if msg.Video != nil {
+		h.handleVideo(ctx, b, msg)
+		return
+	}
+}
+
+func (h *Handler) handleVideo(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	if h.mediaDir == "" {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: msg.Video.FileID})
+	if err != nil {
+		slog.Error("get_video_file", "error", err)
+		return
+	}
+
+	downloadURL := b.FileDownloadLink(file)
+	ext := ".mp4"
+	if msg.Video.MimeType == "video/quicktime" {
+		ext = ".mov"
+	}
+	filename := fmt.Sprintf("%d_%s%s", msg.Date, msg.Video.FileID[:8], ext)
+
+	savedPath, err := saveMedia(h.mediaDir, downloadURL, filename)
+	if err != nil {
+		slog.Error("save_video", "error", err)
+		return
+	}
+	slog.Info("video_saved", "path", savedPath)
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   "视频已收到~",
+	})
 }
 
 func (h *Handler) handleText(ctx context.Context, b *bot.Bot, msg *models.Message, replyAsVoice bool) {
@@ -183,6 +230,17 @@ func (h *Handler) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 	}
 
 	downloadURL := b.FileDownloadLink(file)
+
+	// Save to daily media directory for vlog
+	if h.mediaDir != "" {
+		filename := fmt.Sprintf("%d_%s.jpg", msg.Date, photo.FileID[:8])
+		if savedPath, err := saveMedia(h.mediaDir, downloadURL, filename); err != nil {
+			slog.Error("save_media", "error", err)
+		} else {
+			slog.Info("media_saved", "path", savedPath)
+		}
+	}
+
 	resp, err := http.Get(downloadURL)
 	if err != nil {
 		slog.Error("download_file", "error", err)

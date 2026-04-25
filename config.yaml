@@ -37,6 +37,13 @@ tts:
   enabled: true
   voice: zh-CN-XiaoyiNeural
 
+vlog:
+  enabled: true
+  schedule_hour: 22
+  media_dir: ./data/media
+  bgm_path: ./data/bgm/bgm.mp3
+  min_items: 2
+
 weather:
   default_city: 大阪市
   default_latitude: 34.6937

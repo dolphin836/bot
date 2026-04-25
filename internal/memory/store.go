@@ -37,6 +37,10 @@ func NewStore(dbPath string) (*Store, error) {
 	return &Store{db: db}, nil
 }
 
+func (s *Store) DB() *gorm.DB {
+	return s.db
+}
+
 func (s *Store) AddMessage(msg *Message) error {
 	return s.db.Create(msg).Error
 }
