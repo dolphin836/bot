@@ -15,6 +15,12 @@ type Config struct {
 	Memory    MemoryConfig    `mapstructure:"memory"`
 	DB        DBConfig        `mapstructure:"db"`
 	Weather   WeatherConfig   `mapstructure:"weather"`
+	TTS       TTSConfig       `mapstructure:"tts"`
+}
+
+type TTSConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	Voice   string `mapstructure:"voice"`
 }
 
 type WeatherConfig struct {

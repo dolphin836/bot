@@ -12,6 +12,7 @@ import (
 	"github.com/dolphin836/bot/internal/llm"
 	"github.com/dolphin836/bot/internal/memory"
 	"github.com/dolphin836/bot/internal/tools"
+	"github.com/dolphin836/bot/internal/tts"
 	tgbot "github.com/go-telegram/bot"
 )
 
@@ -65,8 +66,10 @@ func main() {
 		SummaryMaxAgeDays: cfg.Memory.SummaryMaxAgeDays,
 	})
 
+	ttsSvc := tts.NewService(cfg.TTS.Voice, cfg.TTS.Enabled)
+
 	chatSvc := chat.NewService(memMgr, llmClient)
-	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc)
+	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc, ttsSvc)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

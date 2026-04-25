@@ -1,6 +1,7 @@
 package bot
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dolphin836/bot/internal/chat"
+	"github.com/dolphin836/bot/internal/tts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
@@ -19,13 +21,15 @@ import (
 type Handler struct {
 	ownerID int64
 	chatSvc *chat.Service
+	ttsSvc  *tts.Service
 	mu      sync.Mutex
 }
 
-func NewHandler(ownerID int64, chatSvc *chat.Service) *Handler {
+func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service) *Handler {
 	return &Handler{
 		ownerID: ownerID,
 		chatSvc: chatSvc,
+		ttsSvc:  ttsSvc,
 	}
 }
 
@@ -45,7 +49,12 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 
 	if msg.Text != "" {
-		h.handleText(ctx, b, msg)
+		h.handleText(ctx, b, msg, true)
+		return
+	}
+
+	if msg.Voice != nil {
+		h.handleVoice(ctx, b, msg)
 		return
 	}
 
@@ -55,7 +64,7 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 }
 
-func (h *Handler) handleText(ctx context.Context, b *bot.Bot, msg *models.Message) {
+func (h *Handler) handleText(ctx context.Context, b *bot.Bot, msg *models.Message, replyAsVoice bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
@@ -92,11 +101,44 @@ func (h *Handler) handleText(ctx context.Context, b *bot.Bot, msg *models.Messag
 		return
 	}
 
+	// Final text update
 	b.EditMessageText(ctx, &bot.EditMessageTextParams{
 		ChatID:    msg.Chat.ID,
 		MessageID: sent.ID,
 		Text:      reply,
 	})
+
+	// Send voice reply if requested and TTS is enabled
+	if replyAsVoice && h.ttsSvc != nil && h.ttsSvc.Enabled() {
+		h.sendVoiceReply(ctx, b, msg.Chat.ID, reply)
+	}
+}
+
+func (h *Handler) handleVoice(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	// Voice input requires STT (not yet integrated)
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   "我听到了你的语音~ 不过目前还没有接入语音识别服务，你可以先用文字和我聊天，我会用语音回复你哦",
+	})
+}
+
+func (h *Handler) sendVoiceReply(ctx context.Context, b *bot.Bot, chatID int64, text string) {
+	audioData, err := h.ttsSvc.Synthesize(ctx, text)
+	if err != nil {
+		slog.Error("tts_synthesize", "error", err)
+		return
+	}
+
+	_, err = b.SendVoice(ctx, &bot.SendVoiceParams{
+		ChatID: chatID,
+		Voice: &models.InputFileUpload{
+			Filename: "voice.mp3",
+			Data:     bytes.NewReader(audioData),
+		},
+	})
+	if err != nil {
+		slog.Error("send_voice", "error", err)
+	}
 }
 
 func (h *Handler) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Message) {
