@@ -1,6 +1,10 @@
 package config
 
 import (
+	"os"
+
+	"github.com/subosito/gotenv"
+
 	"github.com/spf13/viper"
 )
 
@@ -45,6 +49,12 @@ type DBConfig struct {
 // Load reads configuration from the YAML file at path, with environment
 // variable overrides for sensitive values.
 func Load(path string) (*Config, error) {
+	// Load .env file if present (won't overwrite existing env vars)
+	if f, err := os.Open(".env"); err == nil {
+		_ = gotenv.Apply(f)
+		f.Close()
+	}
+
 	v := viper.New()
 
 	v.SetConfigFile(path)

@@ -1,5 +1,5 @@
 telegram:
-  token: ${8744171124:AAEshL6dTe87qBCb8936Ze0Vqs1i6dfjT30}
+  token: ${TELEGRAM_BOT_TOKEN}
   owner_id: 6367369394
 
 anthropic:
