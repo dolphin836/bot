@@ -52,7 +52,7 @@ func (h *Handler) Handle(ctx context.Context, b *bot.Bot, update *models.Update)
 	}
 
 	if msg.Text != "" {
-		h.handleText(ctx, b, msg, true)
+		h.handleText(ctx, b, msg, false)
 		return
 	}
 
@@ -118,10 +118,35 @@ func (h *Handler) handleText(ctx context.Context, b *bot.Bot, msg *models.Messag
 }
 
 func (h *Handler) handleVoice(ctx context.Context, b *bot.Bot, msg *models.Message) {
-	// Voice input requires STT (not yet integrated)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	// Download voice file
+	file, err := b.GetFile(ctx, &bot.GetFileParams{FileID: msg.Voice.FileID})
+	if err != nil {
+		slog.Error("get_voice_file", "error", err)
+		return
+	}
+
+	downloadURL := b.FileDownloadLink(file)
+	resp, err := http.Get(downloadURL)
+	if err != nil {
+		slog.Error("download_voice", "error", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	_, err = io.ReadAll(resp.Body)
+	if err != nil {
+		slog.Error("read_voice", "error", err)
+		return
+	}
+
+	// TODO: integrate STT (Whisper) to transcribe voice to text
+	// For now, inform user that voice input is not yet supported
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: msg.Chat.ID,
-		Text:   "我听到了你的语音~ 不过目前还没有接入语音识别服务，你可以先用文字和我聊天，我会用语音回复你哦",
+		Text:   "我听到了你的语音~ 不过目前还没有接入语音识别，你先用文字和我聊，我会用语音回复你哦",
 	})
 }
 
