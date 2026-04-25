@@ -2,4 +2,4 @@ data/
 *.db
 config.local.yaml
 .env
-bot
+/bot

@@ -10,6 +10,13 @@ type Config struct {
 	Anthropic AnthropicConfig `mapstructure:"anthropic"`
 	Memory    MemoryConfig    `mapstructure:"memory"`
 	DB        DBConfig        `mapstructure:"db"`
+	Weather   WeatherConfig   `mapstructure:"weather"`
+}
+
+type WeatherConfig struct {
+	DefaultCity      string  `mapstructure:"default_city"`
+	DefaultLatitude  float64 `mapstructure:"default_latitude"`
+	DefaultLongitude float64 `mapstructure:"default_longitude"`
 }
 
 // TelegramConfig holds Telegram bot configuration.

@@ -1,6 +1,6 @@
 telegram:
-  token: ${TELEGRAM_BOT_TOKEN}
-  owner_id: 0
+  token: ${8744171124:AAEshL6dTe87qBCb8936Ze0Vqs1i6dfjT30}
+  owner_id: 6367369394
 
 anthropic:
   api_key: ${ANTHROPIC_API_KEY}
@@ -12,3 +12,8 @@ memory:
 
 db:
   path: ./data/bot.db
+
+weather:
+  default_city: 大阪市
+  default_latitude: 34.6937
+  default_longitude: 135.5023

@@ -51,6 +51,11 @@ func main() {
 	}
 
 	registry := tools.NewRegistry()
+	registry.Register(tools.NewWeatherTool(tools.WeatherConfig{
+		DefaultCity:      cfg.Weather.DefaultCity,
+		DefaultLatitude:  cfg.Weather.DefaultLatitude,
+		DefaultLongitude: cfg.Weather.DefaultLongitude,
+	}))
 
 	llmClient := llm.NewClient(cfg.Anthropic.APIKey, cfg.Anthropic.Model, registry)
 	compressor := llm.NewCompressor(cfg.Anthropic.APIKey, cfg.Anthropic.Model)
