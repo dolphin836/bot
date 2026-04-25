@@ -28,6 +28,17 @@ type Fact struct {
 	UpdatedAt time.Time
 }
 
+type PhotoIndex struct {
+	ID          uint   `gorm:"primarykey"`
+	Filename    string `gorm:"uniqueIndex;not null"`
+	FilePath    string `gorm:"not null"`
+	FileType    string `gorm:"not null"` // image or video
+	Description string
+	FileSize    int64
+	ModTime     time.Time
+	IndexedAt   time.Time
+}
+
 type ToolCallRecord struct {
 	ID        uint   `gorm:"primarykey"`
 	MessageID uint   `gorm:"index"`

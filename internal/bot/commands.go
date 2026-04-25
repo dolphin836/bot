@@ -27,6 +27,8 @@ func (h *Handler) handleCommand(ctx context.Context, b *bot.Bot, msg *models.Mes
 			keyword = strings.Join(parts[1:], " ")
 		}
 		h.cmdForget(ctx, b, msg, keyword)
+	case "/scan":
+		h.cmdScan(ctx, b, msg)
 	default:
 		b.SendMessage(ctx, &bot.SendMessageParams{
 			ChatID: msg.Chat.ID,
@@ -39,7 +41,8 @@ func (h *Handler) cmdHelp(ctx context.Context, b *bot.Bot, msg *models.Message) 
 	text := `/help — Show this message
 /clear — Clear all memory and start fresh
 /facts — Show stored long-term facts
-/forget <keyword> — Delete facts matching keyword`
+/forget <keyword> — Delete facts matching keyword
+/scan — Scan and index local photo album`
 
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: msg.Chat.ID,
@@ -114,5 +117,70 @@ func (h *Handler) cmdForget(ctx context.Context, b *bot.Bot, msg *models.Message
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: msg.Chat.ID,
 		Text:   fmt.Sprintf("Forgot facts matching %q.", keyword),
+	})
+}
+
+func (h *Handler) cmdScan(ctx context.Context, b *bot.Bot, msg *models.Message) {
+	if h.scanner == nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   "Photo scanning is not configured.",
+		})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   "开始扫描相册目录...",
+	})
+
+	fileCount, err := h.scanner.ScanDir()
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   fmt.Sprintf("扫描出错: %v", err),
+		})
+		return
+	}
+
+	total, _ := h.scanner.Store().PhotoCount()
+	indexed, _ := h.scanner.Store().IndexedPhotoCount()
+	unindexed := total - indexed
+
+	if unindexed == 0 {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   fmt.Sprintf("扫描完成，共 %d 个文件，全部已建立索引。", total),
+		})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   fmt.Sprintf("发现 %d 个文件（新增 %d），开始用 AI 分析生成描述...\n这可能需要几分钟，请耐心等待~", total, unindexed),
+	})
+
+	_ = fileCount
+
+	processed, err := h.scanner.IndexUnprocessed(ctx, func(current, total int) {
+		if current%5 == 0 || current == total {
+			b.SendMessage(ctx, &bot.SendMessageParams{
+				ChatID: msg.Chat.ID,
+				Text:   fmt.Sprintf("正在分析... %d/%d", current, total),
+			})
+		}
+	})
+
+	if err != nil {
+		b.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: msg.Chat.ID,
+			Text:   fmt.Sprintf("分析过程中出错: %v\n已完成 %d 张", err, processed),
+		})
+		return
+	}
+
+	b.SendMessage(ctx, &bot.SendMessageParams{
+		ChatID: msg.Chat.ID,
+		Text:   fmt.Sprintf("全部完成！成功分析了 %d 张照片/视频，现在可以问我关于你相册里的事情了~", processed),
 	})
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dolphin836/bot/internal/chat"
+	"github.com/dolphin836/bot/internal/photos"
 	"github.com/dolphin836/bot/internal/tts"
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -22,14 +23,16 @@ type Handler struct {
 	ownerID int64
 	chatSvc *chat.Service
 	ttsSvc  *tts.Service
+	scanner *photos.Scanner
 	mu      sync.Mutex
 }
 
-func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service) *Handler {
+func NewHandler(ownerID int64, chatSvc *chat.Service, ttsSvc *tts.Service, scanner *photos.Scanner) *Handler {
 	return &Handler{
 		ownerID: ownerID,
 		chatSvc: chatSvc,
 		ttsSvc:  ttsSvc,
+		scanner: scanner,
 	}
 }
 

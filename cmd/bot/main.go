@@ -11,6 +11,7 @@ import (
 	"github.com/dolphin836/bot/internal/config"
 	"github.com/dolphin836/bot/internal/llm"
 	"github.com/dolphin836/bot/internal/memory"
+	"github.com/dolphin836/bot/internal/photos"
 	"github.com/dolphin836/bot/internal/tools"
 	"github.com/dolphin836/bot/internal/tts"
 	tgbot "github.com/go-telegram/bot"
@@ -57,6 +58,7 @@ func main() {
 		DefaultLatitude:  cfg.Weather.DefaultLatitude,
 		DefaultLongitude: cfg.Weather.DefaultLongitude,
 	}))
+	registry.Register(tools.NewPhotosTool(store))
 
 	llmClient := llm.NewClient(cfg.Anthropic.APIKey, cfg.Anthropic.Model, cfg.Anthropic.Persona, registry)
 	compressor := llm.NewCompressor(cfg.Anthropic.APIKey, cfg.Anthropic.Model)
@@ -68,8 +70,13 @@ func main() {
 
 	ttsSvc := tts.NewService(cfg.TTS.Voice, cfg.TTS.Enabled)
 
+	var scanner *photos.Scanner
+	if cfg.Photos.Dir != "" {
+		scanner = photos.NewScanner(store, cfg.Anthropic.APIKey, cfg.Anthropic.Model, cfg.Photos.Dir)
+	}
+
 	chatSvc := chat.NewService(memMgr, llmClient)
-	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc, ttsSvc)
+	handler := bothandler.NewHandler(cfg.Telegram.OwnerID, chatSvc, ttsSvc, scanner)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()

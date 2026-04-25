@@ -30,7 +30,7 @@ func NewStore(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 
-	if err := db.AutoMigrate(&Message{}, &Summary{}, &Fact{}, &ToolCallRecord{}); err != nil {
+	if err := db.AutoMigrate(&Message{}, &Summary{}, &Fact{}, &ToolCallRecord{}, &PhotoIndex{}); err != nil {
 		return nil, fmt.Errorf("auto migrate: %w", err)
 	}
 
@@ -111,6 +111,60 @@ func (s *Store) UpdateToolCall(id uint, output string, status string) error {
 		"output": output,
 		"status": status,
 	}).Error
+}
+
+func (s *Store) UpsertPhoto(photo *PhotoIndex) error {
+	var existing PhotoIndex
+	result := s.db.Where("filename = ?", photo.Filename).First(&existing)
+	if result.Error == nil {
+		// Update existing
+		return s.db.Model(&existing).Updates(map[string]interface{}{
+			"description": photo.Description,
+			"file_size":   photo.FileSize,
+			"mod_time":    photo.ModTime,
+			"indexed_at":  photo.IndexedAt,
+		}).Error
+	}
+	return s.db.Create(photo).Error
+}
+
+func (s *Store) GetPhotoByFilename(filename string) (*PhotoIndex, error) {
+	var photo PhotoIndex
+	err := s.db.Where("filename = ?", filename).First(&photo).Error
+	if err != nil {
+		return nil, err
+	}
+	return &photo, nil
+}
+
+func (s *Store) SearchPhotos(keyword string) ([]PhotoIndex, error) {
+	var photos []PhotoIndex
+	err := s.db.Where("description LIKE ?", "%"+keyword+"%").Order("mod_time desc").Limit(10).Find(&photos).Error
+	return photos, err
+}
+
+func (s *Store) GetAllPhotos() ([]PhotoIndex, error) {
+	var photos []PhotoIndex
+	err := s.db.Order("mod_time desc").Find(&photos).Error
+	return photos, err
+}
+
+func (s *Store) GetUnindexedPhotos() ([]PhotoIndex, error) {
+	var photos []PhotoIndex
+	err := s.db.Where("description = '' OR description IS NULL").Find(&photos).Error
+	return photos, err
+}
+
+func (s *Store) PhotoCount() (int64, error) {
+	var count int64
+	err := s.db.Model(&PhotoIndex{}).Count(&count).Error
+	return count, err
+}
+
+func (s *Store) IndexedPhotoCount() (int64, error) {
+	var count int64
+	err := s.db.Model(&PhotoIndex{}).Where("description != '' AND description IS NOT NULL").Count(&count).Error
+	return count, err
 }
 
 func (s *Store) ClearAll() error {

@@ -16,6 +16,11 @@ type Config struct {
 	DB        DBConfig        `mapstructure:"db"`
 	Weather   WeatherConfig   `mapstructure:"weather"`
 	TTS       TTSConfig       `mapstructure:"tts"`
+	Photos    PhotosConfig    `mapstructure:"photos"`
+}
+
+type PhotosConfig struct {
+	Dir string `mapstructure:"dir"`
 }
 
 type TTSConfig struct {

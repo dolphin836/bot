@@ -30,6 +30,9 @@ memory:
 db:
   path: ./data/bot.db
 
+photos:
+  dir: /Users/eric/Pictures/Photos
+
 tts:
   enabled: true
   voice: zh-CN-XiaoyiNeural
