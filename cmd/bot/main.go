@@ -39,6 +39,10 @@ func main() {
 		slog.Error("ANTHROPIC_API_KEY is required")
 		os.Exit(1)
 	}
+	if cfg.Telegram.OwnerID == 0 {
+		slog.Error("telegram.owner_id must be set to your Telegram user ID")
+		os.Exit(1)
+	}
 
 	store, err := memory.NewStore(cfg.DB.Path)
 	if err != nil {

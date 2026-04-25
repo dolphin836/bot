@@ -43,7 +43,8 @@ func (s *Store) AddMessage(msg *Message) error {
 
 func (s *Store) GetRecentMessages(limit int) ([]Message, error) {
 	var messages []Message
-	result := s.db.Order("id asc").Limit(limit).Find(&messages)
+	sub := s.db.Model(&Message{}).Order("id desc").Limit(limit)
+	result := s.db.Table("(?) as t", sub).Order("id asc").Find(&messages)
 	return messages, result.Error
 }
 
@@ -82,6 +83,12 @@ func (s *Store) GetRecentSummaries(maxAgeDays int) ([]Summary, error) {
 }
 
 func (s *Store) AddFact(fact *Fact) error {
+	// Deduplicate: skip if exact content already exists
+	var count int64
+	s.db.Model(&Fact{}).Where("content = ?", fact.Content).Count(&count)
+	if count > 0 {
+		return nil
+	}
 	return s.db.Create(fact).Error
 }
 

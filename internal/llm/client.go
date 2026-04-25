@@ -114,11 +114,13 @@ func BuildToolParams(registry *tools.Registry) []anthropic.ToolUnionParam {
 // SendStreaming sends a message to Claude with streaming and handles the tool use loop.
 // It calls onText with the accumulated text on each text delta.
 // Returns the final complete text response.
+const maxToolIterations = 20
+
 func (c *Client) SendStreaming(ctx context.Context, convCtx *memory.ConversationContext, onText StreamCallback) (string, error) {
 	systemPrompt, messages := BuildMessages(convCtx)
 	toolParams := BuildToolParams(c.registry)
 
-	for {
+	for iteration := 0; iteration < maxToolIterations; iteration++ {
 		params := anthropic.MessageNewParams{
 			Model:     anthropic.Model(c.model),
 			MaxTokens: 4096,
@@ -193,4 +195,6 @@ func (c *Client) SendStreaming(ctx context.Context, convCtx *memory.Conversation
 		// Reset fullText for next iteration
 		fullText = ""
 	}
+
+	return "", fmt.Errorf("tool use loop exceeded %d iterations", maxToolIterations)
 }
