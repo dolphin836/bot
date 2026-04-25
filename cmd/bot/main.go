@@ -57,7 +57,7 @@ func main() {
 		DefaultLongitude: cfg.Weather.DefaultLongitude,
 	}))
 
-	llmClient := llm.NewClient(cfg.Anthropic.APIKey, cfg.Anthropic.Model, registry)
+	llmClient := llm.NewClient(cfg.Anthropic.APIKey, cfg.Anthropic.Model, cfg.Anthropic.Persona, registry)
 	compressor := llm.NewCompressor(cfg.Anthropic.APIKey, cfg.Anthropic.Model)
 
 	memMgr := memory.NewManager(store, compressor, memory.ManagerConfig{

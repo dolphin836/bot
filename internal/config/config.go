@@ -33,6 +33,7 @@ type TelegramConfig struct {
 type AnthropicConfig struct {
 	APIKey string `mapstructure:"api_key"`
 	Model  string `mapstructure:"model"`
+	Persona string `mapstructure:"persona"`
 }
 
 // MemoryConfig holds memory/conversation history configuration.

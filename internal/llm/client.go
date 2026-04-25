@@ -19,24 +19,29 @@ type StreamCallback func(text string)
 type Client struct {
 	client   anthropic.Client
 	model    string
+	persona  string
 	registry *tools.Registry
 }
 
 // NewClient creates a new Claude API client.
-func NewClient(apiKey string, model string, registry *tools.Registry) *Client {
+func NewClient(apiKey string, model string, persona string, registry *tools.Registry) *Client {
 	return &Client{
 		client:   anthropic.NewClient(option.WithAPIKey(apiKey)),
 		model:    model,
+		persona:  persona,
 		registry: registry,
 	}
 }
 
 // BuildMessages converts a ConversationContext into a system prompt and message params
 // suitable for the Anthropic API.
-func BuildMessages(convCtx *memory.ConversationContext) (string, []anthropic.MessageParam) {
-	// Build system prompt
+func BuildMessages(persona string, convCtx *memory.ConversationContext) (string, []anthropic.MessageParam) {
 	var sb strings.Builder
-	sb.WriteString("You are a helpful personal assistant. Be concise and direct.")
+	if persona != "" {
+		sb.WriteString(persona)
+	} else {
+		sb.WriteString("You are a helpful personal assistant. Be concise and direct.")
+	}
 
 	if len(convCtx.Facts) > 0 {
 		sb.WriteString("\n\n## Things I know about the user\n")
@@ -117,7 +122,7 @@ func BuildToolParams(registry *tools.Registry) []anthropic.ToolUnionParam {
 const maxToolIterations = 20
 
 func (c *Client) SendStreaming(ctx context.Context, convCtx *memory.ConversationContext, onText StreamCallback) (string, error) {
-	systemPrompt, messages := BuildMessages(convCtx)
+	systemPrompt, messages := BuildMessages(c.persona, convCtx)
 	toolParams := BuildToolParams(c.registry)
 
 	for iteration := 0; iteration < maxToolIterations; iteration++ {

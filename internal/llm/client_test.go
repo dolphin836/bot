@@ -39,7 +39,7 @@ func TestBuildMessagesFromContext(t *testing.T) {
 		},
 	}
 
-	systemPrompt, messages := BuildMessages(convCtx)
+	systemPrompt, messages := BuildMessages("", convCtx)
 
 	// Verify system prompt contains base persona
 	if !strings.Contains(systemPrompt, "helpful personal assistant") {
@@ -79,7 +79,7 @@ func TestBuildMessagesFromContext(t *testing.T) {
 func TestBuildMessagesEmptyContext(t *testing.T) {
 	convCtx := &memory.ConversationContext{}
 
-	systemPrompt, messages := BuildMessages(convCtx)
+	systemPrompt, messages := BuildMessages("", convCtx)
 
 	if !strings.Contains(systemPrompt, "helpful personal assistant") {
 		t.Error("system prompt should contain base persona even with empty context")
@@ -110,7 +110,7 @@ func TestBuildMessagesWithImage(t *testing.T) {
 		},
 	}
 
-	_, messages := BuildMessages(convCtx)
+	_, messages := BuildMessages("", convCtx)
 
 	if len(messages) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(messages))
