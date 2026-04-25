@@ -1,0 +1,14 @@
+telegram:
+  token: ${TELEGRAM_BOT_TOKEN}
+  owner_id: 0
+
+anthropic:
+  api_key: ${ANTHROPIC_API_KEY}
+  model: claude-sonnet-4-20250514
+
+memory:
+  recent_limit: 50
+  summary_max_age_days: 30
+
+db:
+  path: ./data/bot.db
