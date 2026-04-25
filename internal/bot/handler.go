@@ -100,7 +100,7 @@ func (h *Handler) handleVideo(ctx context.Context, b *bot.Bot, msg *models.Messa
 	if msg.Video.MimeType == "video/quicktime" {
 		ext = ".mov"
 	}
-	filename := fmt.Sprintf("%d_%s%s", msg.Date, msg.Video.FileID[:8], ext)
+	filename := fmt.Sprintf("video_%d_%s%s", time.Now().UnixMilli(), msg.Video.FileID, ext)
 
 	savedPath, err := saveMedia(h.mediaDir, downloadURL, filename)
 	if err != nil {
@@ -233,7 +233,7 @@ func (h *Handler) handlePhoto(ctx context.Context, b *bot.Bot, msg *models.Messa
 
 	// Save to daily media directory for vlog
 	if h.mediaDir != "" {
-		filename := fmt.Sprintf("%d_%s.jpg", msg.Date, photo.FileID[:8])
+		filename := fmt.Sprintf("photo_%d_%s.jpg", time.Now().UnixMilli(), photo.FileID)
 		if savedPath, err := saveMedia(h.mediaDir, downloadURL, filename); err != nil {
 			slog.Error("save_media", "error", err)
 		} else {
