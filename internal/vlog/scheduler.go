@@ -1,15 +1,12 @@
 package vlog
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
-	"os"
 	"time"
 
 	"github.com/go-telegram/bot"
-	"github.com/go-telegram/bot/models"
 )
 
 type Scheduler struct {
@@ -95,22 +92,8 @@ func (s *Scheduler) run(ctx context.Context, notify ...bool) {
 		return
 	}
 
-	// Send the video
-	videoData, err := os.ReadFile(videoPath)
-	if err != nil {
-		slog.Error("vlog_read", "error", err)
-		return
-	}
-
-	_, err = s.bot.SendVideo(ctx, &bot.SendVideoParams{
+	s.bot.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: s.ownerID,
-		Video: &models.InputFileUpload{
-			Filename: "vlog_" + date + ".mp4",
-			Data:     bytes.NewReader(videoData),
-		},
-		Caption: "今天的 vlog 来啦~",
+		Text:   fmt.Sprintf("今天的 vlog 已生成~ 保存在 %s", videoPath),
 	})
-	if err != nil {
-		slog.Error("vlog_send", "error", err)
-	}
 }
